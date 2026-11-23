@@ -16,15 +16,26 @@
 // stand in for /bot and /output:
 //   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const botDir = process.env.MAKEFUN_BOT_DIR ?? "/bot";
 const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 
+// The entry is refused when POST.json names no post, so check the address
+// is a real post URL before copying: a placeholder left in by mistake
+// must fail loudly here instead of reaching the gate.
+const postPath = join(botDir, "POST.json");
+const post = JSON.parse(readFileSync(postPath, "utf8")) as { url?: unknown };
+const url = typeof post.url === "string" ? post.url : "";
+if (!/^https:\/\/(www\.|mobile\.)?(x|twitter)\.com\/[^/]+\/status\/\d+/.test(url)) {
+  console.error(`POST.json does not name a post on X yet: ${url || "(empty)"}`);
+  process.exit(1);
+}
+
 mkdirSync(outDir, { recursive: true });
 try {
-  copyFileSync(join(botDir, "POST.json"), join(outDir, "POST.json"));
+  copyFileSync(postPath, join(outDir, "POST.json"));
 } catch (err) {
   console.error(`POST.json could not be copied from ${botDir}: ${(err as Error).message}`);
   process.exit(1);
