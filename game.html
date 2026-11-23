@@ -1,0 +1,201 @@
+<!doctype html>
+<!-- STAR SNAKE — a tiny browser game built from one prompt.
+     One prompt: "Build me a tiny browser game: a glowing snake that eats
+     stars, speeds up every 5 stars, and ends when it bites itself."
+     Open this file in any browser and play with arrow keys / WASD / swipe. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>STAR SNAKE — one prompt, one game</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b0b12; color: #f2f2f7; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    padding: 16px; gap: 12px;
+  }
+  h1 { font-size: 22px; letter-spacing: 4px; color: #39ff88; text-shadow: 0 0 18px #39ff88aa; }
+  h1 span { color: #ff2e9a; text-shadow: 0 0 18px #ff2e9aaa; }
+  #hud {
+    display: flex; gap: 24px; font-size: 15px; color: #b9b9c9;
+  }
+  #hud b { color: #ffd23f; }
+  #wrap { position: relative; }
+  canvas {
+    display: block; background: #101018; border: 2px solid #2a2a3d; border-radius: 14px;
+    box-shadow: 0 0 40px #39ff8822, 0 0 80px #ff2e9a11; touch-action: none;
+    width: min(92vw, 540px); height: auto;
+  }
+  #over {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    background: #0b0b12cc; border-radius: 14px; text-align: center;
+  }
+  #over h2 { color: #ff2e9a; font-size: 30px; letter-spacing: 3px; }
+  #over p { color: #ffd23f; font-size: 17px; }
+  #over small { color: #b9b9c9; }
+  #hint { font-size: 13px; color: #8a8a9e; text-align: center; }
+  #hint code { color: #39ff88; }
+</style>
+</head>
+<body>
+  <h1>STAR <span>SNAKE</span></h1>
+  <div id="hud">
+    <div>SCORE <b id="score">0</b></div>
+    <div>STARS <b id="stars">0</b></div>
+    <div>SPEED <b id="speed">x1.0</b></div>
+    <div>BEST <b id="best">0</b></div>
+  </div>
+  <div id="wrap">
+    <canvas id="game" width="540" height="660"></canvas>
+    <div id="over">
+      <h2>GAME OVER</h2>
+      <p id="final">Score 0</p>
+      <small>press R or tap to play again</small>
+    </div>
+  </div>
+  <p id="hint">move with <code>← ↑ ↓ →</code> / <code>WASD</code> / swipe &nbsp;·&nbsp; built from one prompt by an AI agent</p>
+
+<script>
+"use strict";
+const COLS = 18, ROWS = 22, CELL = 30;
+const cv = document.getElementById("game");
+const ctx = cv.getContext("2d");
+const scoreEl = document.getElementById("score");
+const starsEl = document.getElementById("stars");
+const speedEl = document.getElementById("speed");
+const bestEl = document.getElementById("best");
+const overEl = document.getElementById("over");
+const finalEl = document.getElementById("final");
+
+let snake, dir, queue, star, score, stars, alive, timer;
+let best = +(localStorage.getItem("starsnake-best") || 0);
+bestEl.textContent = best;
+
+function speedMs() { return Math.max(70, 150 - Math.floor(stars / 5) * 18); }
+
+function reset() {
+  snake = [{ x: 9, y: 11 }, { x: 8, y: 11 }, { x: 7, y: 11 }];
+  dir = { x: 1, y: 0 }; queue = [];
+  score = 0; stars = 0; alive = true;
+  overEl.style.display = "none";
+  placeStar(); draw(); updateHud();
+  clearInterval(timer);
+  timer = setInterval(step, speedMs());
+}
+
+function placeStar() {
+  for (;;) {
+    const p = { x: (Math.random() * COLS) | 0, y: (Math.random() * ROWS) | 0 };
+    if (!snake.some(s => s.x === p.x && s.y === p.y)) { star = p; return; }
+  }
+}
+
+function step() {
+  if (!alive) return;
+  if (queue.length) {
+    const d = queue.shift();
+    if (d.x !== -dir.x || d.y !== -dir.y) dir = d;
+  }
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+  const hitWall = head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS;
+  const hitSelf = snake.some(s => s.x === head.x && s.y === head.y);
+  if (hitWall || hitSelf) return gameOver();
+  snake.unshift(head);
+  if (head.x === star.x && head.y === star.y) {
+    score += 10 + Math.floor(stars / 5) * 5;
+    stars++;
+    placeStar();
+    clearInterval(timer);
+    timer = setInterval(step, speedMs());
+  } else {
+    snake.pop();
+  }
+  draw(); updateHud();
+}
+
+function gameOver() {
+  alive = false;
+  clearInterval(timer);
+  if (score > best) { best = score; localStorage.setItem("starsnake-best", best); }
+  finalEl.textContent = "Score " + score + " · " + stars + " stars";
+  bestEl.textContent = best;
+  overEl.style.display = "flex";
+}
+
+function updateHud() {
+  scoreEl.textContent = score;
+  starsEl.textContent = stars;
+  speedEl.textContent = "x" + (150 / speedMs()).toFixed(1);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  // faint grid
+  ctx.strokeStyle = "#1a1a28"; ctx.lineWidth = 1;
+  for (let x = 1; x < COLS; x++) { ctx.beginPath(); ctx.moveTo(x * CELL, 0); ctx.lineTo(x * CELL, cv.height); ctx.stroke(); }
+  for (let y = 1; y < ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y * CELL); ctx.lineTo(cv.width, y * CELL); ctx.stroke(); }
+  // star
+  const sx = star.x * CELL + CELL / 2, sy = star.y * CELL + CELL / 2;
+  ctx.save();
+  ctx.shadowColor = "#ffd23f"; ctx.shadowBlur = 22;
+  ctx.fillStyle = "#ffd23f";
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
+    ctx[i ? "lineTo" : "moveTo"](sx + Math.cos(a) * r, sy + Math.sin(a) * r);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // snake, glowing
+  snake.forEach((s, i) => {
+    const t = 1 - i / snake.length;
+    ctx.save();
+    ctx.shadowColor = "#39ff88"; ctx.shadowBlur = 16;
+    ctx.fillStyle = i === 0 ? "#b6ffd9" : `rgb(${Math.round(57 * t + 20)}, ${Math.round(255 * t + 40)}, ${Math.round(136 * t + 40)})`;
+    const pad = i === 0 ? 2 : 3;
+    ctx.beginPath();
+    ctx.roundRect(s.x * CELL + pad, s.y * CELL + pad, CELL - pad * 2, CELL - pad * 2, 8);
+    ctx.fill();
+    ctx.restore();
+  });
+  // eyes on the head
+  const h = snake[0];
+  ctx.fillStyle = "#0b0b12";
+  const ex = dir.x, ey = dir.y;
+  const cx = h.x * CELL + CELL / 2, cy = h.y * CELL + CELL / 2;
+  ctx.beginPath(); ctx.arc(cx + ex * 6 - ey * 6, cy + ey * 6 - ex * 6, 3.4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + ex * 6 + ey * 6, cy + ey * 6 + ex * 6, 3.4, 0, 7); ctx.fill();
+}
+
+const KEYS = {
+  ArrowUp: { x: 0, y: -1 }, KeyW: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 }, KeyS: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 }, KeyA: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 },
+};
+addEventListener("keydown", e => {
+  if (e.code === "KeyR") return reset();
+  const d = KEYS[e.code];
+  if (d) { e.preventDefault(); if (queue.length < 3) queue.push(d); }
+});
+let touch = null;
+cv.addEventListener("touchstart", e => { touch = e.touches[0]; e.preventDefault(); }, { passive: false });
+cv.addEventListener("touchend", e => {
+  if (!touch) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touch.clientX, dy = t.clientY - touch.clientY;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) > 24) {
+    queue.push(Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) });
+  } else if (!alive) reset();
+  touch = null;
+}, { passive: false });
+overEl.addEventListener("click", reset);
+
+reset();
+</script>
+</body>
+</html>
